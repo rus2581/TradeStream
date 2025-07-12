@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Trade Tape Reader - Две ленты сделок Binance</title>
+  <style>
+    body {
+      background-color: #000;
+      color: #fff;
+      font-family: monospace;
+      padding: 20px;
+      margin: 0;
+    }
+    h1 {
+      color: #0f0;
+      margin-bottom: 10px;
+      user-select: none;
+      text-align: center;
+    }
+    .trade {
+      display: flex;
+      justify-content: space-between;
+      padding: 2px 6px;
+      font-size: 14px;
+    }
+    .buy {
+      background-color: rgba(0, 255, 0, 0.1);
+      color: #0f0;
+    }
+    .sell {
+      background-color: rgba(255, 0, 0, 0.1);
+      color: #f55;
+    }
+    .highlight {
+      animation: flash 0.8s ease-out;
+    }
+    @keyframes flash {
+      0% { border: 2px solid yellow; }
+      100% { border: 2px solid transparent; }
+    }
+
+    /* Красивые внешние кнопки */
+    #externalControls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+      justify-content: flex-start;
+    }
+    #clearRightTapeBtn,
+    #toggleControlPanelBtn {
+      padding: 6px 12px;
+      background-color: #222;
+      color: #0ff;
+      border: 1px solid #0ff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease-in-out;
+    }
+    #clearRightTapeBtn:hover,
+    #toggleControlPanelBtn:hover {
+      background-color: #007;
+      color: #0ff;
+      border-color: #0ff;
+    }
+
+    /* Обёртка панели управления */
+    #controlPanelWrapper {
+      margin-bottom: 10px;
+      overflow: hidden;
+      transition: max-height 0.3s ease-out;
+      max-height: 200px;
+    }
+    #controlPanelWrapper.collapsed {
+      max-height: 0;
+    }
+
+    /* Панель управления */
+    #controlPanel {
+      background-color: #111;
+      padding: 8px 10px;
+      border-radius: 6px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5vw;
+      font-size: clamp(12px, 1.2vw, 14px);
+      user-select: none;
+      border: 1px solid #444;
+    }
+
+    #controlPanel label {
+      min-width: max-content;
+      flex-shrink: 1;
+      color: #fff;
+      font-size: inherit;
+    }
+
+    #controlPanel input[type="text"],
+    #controlPanel input[type="number"],
+    #controlPanel select,
+    #toggleStreamBtn {
+      flex-shrink: 1;
+      font-size: inherit;
+      padding: 4px 6px;
+      border-radius: 4px;
+      background-color: #222;
+      border: none;
+      color: inherit;
+      width: auto;
+      min-width: 60px;
+    }
+
+    #toggleStreamBtn {
+      cursor: pointer;
+      background-color: #0f0;
+      color: #000;
+      user-select: none;
+      white-space: nowrap;
+      flex-grow: 1;
+      flex-basis: 100%;
+    }
+
+    #minQty {
+      color: #0f0;
+      text-align: right;
+    }
+
+    #highlightQty {
+      color: #ff0;
+      text-align: right;
+    }
+
+    #symbol,
+    #marketType {
+      color: #fff;
+    }
+
+    #minQtyRight {
+      color: #0ff;
+      text-align: right;
+    }
+
+    #signal {
+      font-size: 24px;
+      font-weight: bold;
+      padding: 10px;
+      background-color: #111;
+      border: 2px solid #fff;
+      margin-bottom: 10px;
+      text-align: center;
+      user-select: none;
+    }
+
+    #statsPanel {
+      margin: 10px 0;
+      padding: 10px;
+      background-color: #111;
+      border-radius: 6px;
+      font-size: 16px;
+      text-align: center;
+      line-height: 1.6;
+      user-select: none;
+    }
+
+    #currentPrice {
+      font-size: 18px;
+      text-align: center;
+      color: #0ff;
+      margin: 10px 0;
+      user-select: none;
+    }
+
+    #wsStatus {
+      font-size: 14px;
+      text-align: center;
+      color: #888;
+      margin-top: 5px;
+      user-select: none;
+    }
+
+    #tapeContainer {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      user-select: none;
+    }
+
+    @media (min-width: 768px) {
+      #tapeContainer {
+        flex-direction: row;
+      }
+    }
+
+    #tapeContainer > div {
+      flex: 1;
+      border: 1px solid #444;
+      padding: 10px;
+      max-height: 600px;
+      overflow-y: auto;
+      background-color: #111;
+      border-radius: 6px;
+    }
+
+    #tapeContainer h3 {
+      text-align: center;
+      margin-top: 0;
+      margin-bottom: 10px;
+      user-select: none;
+    }
+  </style>
+</head>
+<body>
+
+  
+
+  <!-- Внешние кнопки -->
+  <div style="display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-bottom: 10px;">
+  <h1 id="pageTitle" style="margin: 0;">Лента сделок Binance | ETH</h1>
+  <div id="externalControls" style="display: flex; gap: 10px;">
+    <button id="toggleControlPanelBtn">🔼 Свернуть</button>
+    <button id="clearRightTapeBtn">🧹 Очистить доп</button>
+  </div>
+</div>
+
+  <!-- Обёртка панели управления -->
+  <div id="controlPanelWrapper">
+    <div id="controlPanel">
+      <label for="symbol">Тикер:</label>
+      <input type="text" id="symbol" value="eth" placeholder="btc/sol/pepe" oninput="resetHistory()" style="width:70px;" />
+      <label for="marketType">Рынок:</label>
+      <select id="marketType" onchange="resetHistory()">
+        <option value="spot">Spot</option>
+        <option value="futures" selected>Futures</option>
+      </select>
+      <label>Мин. объём (осн):</label>
+      <input type="number" id="minQty" value="10" step="1" readonly style="width:60px;" />
+      <label>Подсветка (осн):</label>
+      <input type="number" id="highlightQty" value="50" step="1" readonly style="width:60px;" />
+      <label>Мин. объём (доп):</label>
+      <input type="number" id="minQtyRight" value="10" step="0.01" style="width:80px;" title="Фильтр по объему для правой ленты (ввод вручную)" />
+      <button id="toggleStreamBtn">Запустить</button>
+      <label class="checkbox-label" for="autoScroll">
+        <input type="checkbox" id="autoScroll" checked />
+        Автоскролл
+      </label>
+      <label class="checkbox-label" for="enableFilter">
+        <input type="checkbox" id="enableFilter" />
+        Фильтр объём (осн)
+      </label>
+    </div>
+  </div>
+
+  <!-- Статус подключения -->
+  <div id="wsStatus">🔌 Нет соединения</div>
+
+  <!-- Текущая цена -->
+  <div id="currentPrice">Текущая цена: —</div>
+
+  <!-- Сигнал -->
+  <div id="signal">⚪ Ожидаем сигнал...</div>
+
+  <!-- Панель подтверждения сигналов -->
+  <div id="confirmationPanel" style="
+    margin-top: 8px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  ">
+    <div class="confirm-dot" style="width: 16px; height: 16px; border-radius: 50%; background-color: #444;"></div>
+    <div class="confirm-dot" style="width: 16px; height: 16px; border-radius: 50%; background-color: #444;"></div>
+    <div class="confirm-dot" style="width: 16px; height: 16px; border-radius: 50%; background-color: #444;"></div>
+  </div>
+
+  <!-- Статистика -->
+  <div id="statsPanel">
+    <div id="statsText"></div>
+  </div>
+
+  <!-- Ленты сделок -->
+  <div id="tapeContainer">
+    <div>
+      <h3 style="color:#0f0;">Лента сделок (осн)</h3>
+      <div id="tape"></div>
+    </div>
+    <div>
+      <h3 style="color:#0ff;">Лента сделок (доп)</h3>
+      <div id="tapeRight"></div>
+    </div>
+  </div>
+
+  <script>
+    let wsLeft = null;
+    let delta = 0;
+    let buyVolume = 0;
+    let sellVolume = 0;
+    let lastReset = Date.now();
+    let lastSignal = null;
+    let confirmedSignals = [];
+    let priceHistory = [];
+    let deltaHistory = [];
+    let volumeHistory = [];
+    let enableFilter = false; // Теперь фильтр выключен по умолчанию
+    let wsRight = null;
+
+    const controlPanelWrapper = document.getElementById("controlPanelWrapper");
+    const toggleControlBtn = document.getElementById("toggleControlPanelBtn");
+
+    // Переключатель сворачивания панели
+    toggleControlBtn.addEventListener("click", () => {
+      const isCollapsed = controlPanelWrapper.classList.contains("collapsed");
+      controlPanelWrapper.classList.toggle("collapsed", !isCollapsed);
+      toggleControlBtn.textContent = isCollapsed ? "🔼 Свернуть" : "🔽 Развернуть";
+    });
+
+    window.onload = () => {
+      document.getElementById("symbol").focus();
+
+      // --- Переключатель фильтра ---
+      const enableFilterInput = document.getElementById("enableFilter");
+      enableFilterInput.checked = enableFilter;
+      enableFilterInput.addEventListener("change", function () {
+        enableFilter = this.checked;
+      });
+
+      // --- Кнопка запуска/остановки ---
+      const toggleBtn = document.getElementById("toggleStreamBtn");
+      toggleBtn.addEventListener("click", () => {
+        if (wsLeft) {
+          stopStream();
+          stopRightStream();
+          toggleBtn.textContent = "Запустить";
+          toggleBtn.style.backgroundColor = "#0f0";
+          toggleBtn.style.color = "#000";
+        } else {
+          startStream();
+          startRightStream();
+          toggleBtn.textContent = "Остановить";
+          toggleBtn.style.backgroundColor = "#f55";
+          toggleBtn.style.color = "#000";
+        }
+      });
+
+      // --- Кнопка очистки правой ленты ---
+      document.getElementById("clearRightTapeBtn").addEventListener("click", () => {
+        const tapeRight = document.getElementById("tapeRight");
+        tapeRight.innerHTML = "";
+      });
+    };
+
+    function resetHistory() {
+      deltaHistory = [];
+      volumeHistory = [];
+    }
+
+    function startStream() {
+      const tape = document.getElementById("tape");
+      const signal = document.getElementById("signal");
+      const baseSymbol = document.getElementById("symbol").value.toLowerCase();
+	  document.getElementById("pageTitle").textContent = `Лента сделок Binance | ${baseSymbol.toUpperCase()}`;
+
+      const symbol = baseSymbol + "usdt";
+      const marketType = document.getElementById("marketType").value;
+
+      if (wsLeft) wsLeft.close();
+      tape.innerHTML = "";
+      document.getElementById("statsText").textContent = "";
+      Array.from(document.querySelectorAll("#confirmationPanel .confirm-dot")).forEach(dot => dot.style.backgroundColor = "#444");
+      signal.textContent = "⚪ Ожидаем сигнал...";
+      signal.style.color = "#ccc";
+      document.getElementById("currentPrice").textContent = `Текущая цена: —`;
+      document.getElementById("wsStatus").textContent = '🔄 Подключение...';
+      document.getElementById("wsStatus").style.color = '#ff0';
+
+      delta = 0;
+      buyVolume = 0;
+      sellVolume = 0;
+      lastReset = Date.now();
+      lastSignal = null;
+      confirmedSignals = [];
+      priceHistory = [];
+      deltaHistory = [];
+      volumeHistory = [];
+
+      const streamUrl = marketType === "spot"
+        ? `wss://stream.binance.com:9443/ws/${symbol}@aggTrade`
+        : `wss://fstream.binance.com/ws/${symbol}@aggTrade`;
+
+      wsLeft = new WebSocket(streamUrl);
+      let firstMessageReceived = false;
+
+      function updateStatus(text, color) {
+        const status = document.getElementById("wsStatus");
+        status.textContent = text;
+        status.style.color = color;
+      }
+
+      wsLeft.onmessage = (event) => {
+        const trade = JSON.parse(event.data);
+        const price = parseFloat(trade.p);
+        const qty = parseFloat(trade.q);
+        const isBuyerMaker = trade.m;
+
+        if (!firstMessageReceived) {
+          firstMessageReceived = true;
+          updateStatus('🟢 Соединение активно', '#0f0');
+        }
+
+        volumeHistory.push(qty);
+        if (volumeHistory.length > 60) volumeHistory.shift();
+        const volMean = volumeHistory.reduce((a, b) => a + b, 0) / volumeHistory.length;
+        const dynamicMinQty = Math.max(1, volMean * 0.5);
+        const dynamicHighlightQty = volMean * 1.5;
+
+        if (enableFilter && qty < dynamicMinQty) return;
+
+        document.getElementById("minQty").value = dynamicMinQty.toFixed(2);
+        document.getElementById("highlightQty").value = dynamicHighlightQty.toFixed(2);
+
+        const div = document.createElement("div");
+        div.className = `trade ${isBuyerMaker ? "sell" : "buy"}`;
+        if (qty >= dynamicHighlightQty) div.classList.add("highlight");
+
+        div.innerHTML = `
+          <span>${new Date(trade.T).toLocaleTimeString()}</span>
+          <span>${trade.p}</span>
+<span>${trade.q} ${baseSymbol.toUpperCase()}</span>
+<span>${formatUSDT(price * qty)}</span>
+        `;
+        tape.prepend(div);
+
+        if (tape.children.length > 100) tape.removeChild(tape.lastChild);
+
+        if (isBuyerMaker) {
+          sellVolume += qty;
+          delta -= qty;
+        } else {
+          buyVolume += qty;
+          delta += qty;
+        }
+
+        priceHistory.push(price);
+        if (priceHistory.length > 60) priceHistory.shift();
+
+        document.getElementById("currentPrice").textContent = `Текущая цена: ${price} USDT`;
+
+        const now = Date.now();
+        if (now - lastReset >= 60000) {
+          const avgDelta = buyVolume - sellVolume;
+          deltaHistory.push(avgDelta);
+          if (deltaHistory.length > 30) deltaHistory.shift();
+
+          let longThreshold = 0.000001;
+          let shortThreshold = 0.000001;
+
+          if (deltaHistory.length >= 5) {
+            const positiveDeltas = deltaHistory.filter(d => d > 0);
+            const negativeDeltas = deltaHistory.filter(d => d < 0);
+            const posMean = positiveDeltas.length ? positiveDeltas.reduce((a,b) => a + b, 0) / positiveDeltas.length : 0;
+            const negMean = negativeDeltas.length ? Math.abs(negativeDeltas.reduce((a,b) => a + b, 0) / negativeDeltas.length) : 0;
+            if (positiveDeltas.length > 0) longThreshold = Math.max(0.1, posMean);
+            if (negativeDeltas.length > 0) shortThreshold = Math.max(0.1, negMean);
+          }
+
+          let currentSignal = 'neutral';
+          if (avgDelta > longThreshold) currentSignal = 'long';
+          else if (avgDelta < -shortThreshold) currentSignal = 'short';
+
+          confirmedSignals.push(currentSignal);
+          if (confirmedSignals.length > 3) confirmedSignals.shift();
+
+          const countLong = confirmedSignals.filter(s => s === 'long').length;
+          const countShort = confirmedSignals.filter(s => s === 'short').length;
+          let finalSignal = 'neutral';
+          if (countLong >= 2) finalSignal = 'long';
+          else if (countShort >= 2) finalSignal = 'short';
+
+          const confirmDots = document.querySelectorAll("#confirmationPanel .confirm-dot");
+          confirmedSignals.slice(-3).forEach((sig, index) => {
+            const dot = confirmDots[index];
+            if (!dot) return;
+            dot.style.backgroundColor = sig === 'long' ? '#0f0' : sig === 'short' ? '#f00' : '#ccc';
+          });
+
+          if (finalSignal !== lastSignal) {
+            switch (finalSignal) {
+              case 'long':
+                signal.textContent = "🟢 ИЩИ ЛОНГ";
+                signal.style.color = "#0f0";
+                break;
+              case 'short':
+                signal.textContent = "🔴 ИЩИ ШОРТ";
+                signal.style.color = "#f00";
+                break;
+              default:
+                signal.textContent = "⚪ Нейтрально";
+                signal.style.color = "#ccc";
+            }
+            lastSignal = finalSignal;
+          }
+
+          const fmt = n => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 });
+          const statsDiv = document.getElementById("statsText");
+          statsDiv.innerHTML = `
+            📈 Покупки: ${fmt(buyVolume)} &nbsp;&nbsp;&nbsp;
+            📉 Продажи: ${fmt(Math.abs(sellVolume))} &nbsp;&nbsp;&nbsp;
+            🔄 Дельта: ${fmt(avgDelta)}<br>
+            🎯 Порог Long: ${fmt(longThreshold)} &nbsp;&nbsp;&nbsp;
+            ⛔ Порог Short: ${fmt(shortThreshold)}
+          `;
+
+          delta = 0;
+          lastReset = now;
+        }
+
+        if (document.getElementById("autoScroll").checked) {
+          tape.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      };
+
+      wsLeft.onerror = (error) => {
+        console.error('Ошибка WebSocket:', error);
+        alert('Ошибка соединения с Binance');
+        updateStatus('❌ Ошибка', '#f55');
+      };
+      wsLeft.onclose = (e) => {
+        updateStatus('🔌 Соединение закрыто', '#888');
+        firstMessageReceived = false;
+      };
+      wsLeft.onopen = () => {
+        updateStatus('🟢 Соединение активно', '#0f0');
+      };
+    }
+
+    function stopStream() {
+      if (wsLeft) wsLeft.close();
+      wsLeft = null;
+      resetHistory();
+      document.getElementById("wsStatus").textContent = '🔌 Соединение закрыто';
+      document.getElementById("wsStatus").style.color = '#888';
+      document.getElementById("currentPrice").textContent = 'Текущая цена: —';
+      document.getElementById("signal").textContent = '⚪ Ожидаем сигнал...';
+      document.getElementById("signal").style.color = '#ccc';
+      document.getElementById("statsText").textContent = '';
+      document.getElementById("tape").innerHTML = '';
+      Array.from(document.querySelectorAll("#confirmationPanel .confirm-dot")).forEach(dot => dot.style.backgroundColor = "#444");
+    }
+
+    function startRightStream() {
+      const tapeRight = document.getElementById("tapeRight");
+      const baseSymbol = document.getElementById("symbol").value.toLowerCase();
+      const symbol = baseSymbol + "usdt";
+      const marketType = document.getElementById("marketType").value;
+
+      if (wsRight) wsRight.close();
+      tapeRight.innerHTML = "";
+      let volumeHistoryRight = [];
+
+      const streamUrl = marketType === "spot"
+        ? `wss://stream.binance.com:9443/ws/${symbol}@aggTrade`
+        : `wss://fstream.binance.com/ws/${symbol}@aggTrade`;
+
+      wsRight = new WebSocket(streamUrl);
+      wsRight.onmessage = (event) => {
+        const trade = JSON.parse(event.data);
+        const price = parseFloat(trade.p);
+        const qty = parseFloat(trade.q);
+        const isBuyerMaker = trade.m;
+
+        volumeHistoryRight.push(qty);
+        if (volumeHistoryRight.length > 60) volumeHistoryRight.shift();
+
+        const minQtyRightInput = document.getElementById("minQtyRight");
+        const minQtyRight = parseFloat(minQtyRightInput.value) || 0;
+
+        if (qty < minQtyRight) return;
+
+        const volMeanRight = volumeHistoryRight.reduce((a, b) => a + b, 0) / volumeHistoryRight.length;
+        const dynamicHighlightQtyRight = volMeanRight * 1.5;
+
+        const div = document.createElement("div");
+        div.className = `trade ${isBuyerMaker ? "sell" : "buy"}`;
+        if (qty >= dynamicHighlightQtyRight) div.classList.add("highlight");
+
+        div.innerHTML = `
+          <span>${new Date(trade.T).toLocaleTimeString()}</span>
+          <span>${trade.p}</span>
+<span>${trade.q} ${baseSymbol.toUpperCase()}</span>
+<span>${formatUSDT(price * qty)}</span>
+        `;
+        tapeRight.prepend(div);
+
+        if (tapeRight.children.length > 100) tapeRight.removeChild(tapeRight.lastChild);
+
+        if (document.getElementById("autoScroll").checked) {
+          tapeRight.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      };
+    }
+
+    function stopRightStream() {
+      if (wsRight) wsRight.close();
+      wsRight = null;
+    }
+	function formatUSDT(value) {
+  return Math.floor(value).toLocaleString('ru-RU').replace(/,/g, ' ');
+}
+
+  </script>
+</body>
+</html>
