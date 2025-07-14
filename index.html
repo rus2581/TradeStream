@@ -253,11 +253,33 @@
     </div>
   </div>
 
-  <!-- Статус подключения -->
-  <div id="wsStatus">🔌 Нет соединения</div>
+  <!-- Одна ровная строка -->
+<div style="
+  display: flex;
+  justify-content: center;
+  align-items: baseline;
+  gap: 40px;
+  margin-bottom: 10px;
+  font-family: monospace;
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  color: #0ff;
+  text-align: center;
+  flex-wrap: nowrap; /* запрещаем перенос строк */
+  overflow-x: auto;   /* добавим прокрутку, если вдруг ширины не хватит */
+">
 
-  <!-- Текущая цена -->
-  <div id="currentPrice">Текущая цена: —</div>
+  <span id="wsStatus" style="line-height: 1; display: inline-block; white-space: nowrap;">🔌 Нет соединения</span>
+  <span id="currentPrice" style="line-height: 1; display: inline-block; white-space: nowrap;">Текущая цена: —</span>
+  <span id="fundingRate" style="line-height: 1; display: inline-block; white-space: nowrap;">
+    Фандинг: — (вход по тренду после коррекции)
+  </span>
+
+</div>
+
+
+
 
   <!-- Сигнал -->
   <div id="signal">⚪ Ожидаем сигнал...</div>
@@ -610,6 +632,41 @@
 	function formatUSDT(value) {
   return Math.floor(value).toLocaleString('ru-RU').replace(/,/g, ' ');
 }
+async function fetchFundingRate() {
+  const baseSymbol = document.getElementById("symbol").value.toLowerCase();
+  const marketType = document.getElementById("marketType").value;
+
+  if (marketType !== 'futures') {
+    document.getElementById("fundingRate").textContent = 'Фандинг: — (только для фьючерсов)';
+    return;
+  }
+
+  const symbol = (baseSymbol + "usdt").toUpperCase();
+  try {
+    const response = await fetch(`https://fapi.binance.com/fapi/v1/fundingRate?symbol=${symbol}&limit=1`);
+    const data = await response.json();
+    if (Array.isArray(data) && data.length > 0) {
+      const funding = parseFloat(data[0].fundingRate);
+      const fundingPercent = (funding * 100).toFixed(4);
+      const direction =
+  funding > 0
+    ? '🟢 Лонг'
+    : funding < 0
+    ? '🔴 Шорт'
+    : '⚪ Нейтрально';
+      document.getElementById("fundingRate").textContent = `Фандинг: ${fundingPercent}% (${direction})`;
+    } else {
+      document.getElementById("fundingRate").textContent = 'Фандинг: данные отсутствуют';
+    }
+  } catch (e) {
+    document.getElementById("fundingRate").textContent = 'Фандинг: ошибка загрузки';
+    console.error(e);
+  }
+}
+
+// Обновлять при загрузке и каждые 10 секунд
+fetchFundingRate();
+setInterval(fetchFundingRate, 10_000);
 
   </script>
 </body>
