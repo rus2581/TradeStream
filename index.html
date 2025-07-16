@@ -300,9 +300,11 @@
   </div>
 
   <!-- Статистика -->
-  <div id="statsPanel">
-    <div id="statsText"></div>
-  </div>
+  <!-- Статистика -->
+<div id="statsPanel">
+  <div id="statsText"></div>
+  
+</div>
 
   <!-- Ленты сделок -->
   <div id="tapeContainer">
@@ -415,6 +417,7 @@
 
       wsLeft = new WebSocket(streamUrl);
       let firstMessageReceived = false;
+	  const fmt = n => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 });
 
       function updateStatus(text, color) {
         const status = document.getElementById("wsStatus");
@@ -459,12 +462,19 @@
         if (tape.children.length > 100) tape.removeChild(tape.lastChild);
 
         if (isBuyerMaker) {
-          sellVolume += qty;
-          delta -= qty;
-        } else {
-          buyVolume += qty;
-          delta += qty;
-        }
+  sellVolume += qty;
+  delta -= qty;
+} else {
+  buyVolume += qty;
+  delta += qty;
+}
+
+// ✅ Обновляем дельту на каждый тик
+const deltaLiveDiv = document.getElementById("deltaLive");
+if (deltaLiveDiv) {
+  deltaLiveDiv.textContent = `🟡 Текущая дельта: ${fmt(delta)}`;
+}
+
 
         priceHistory.push(price);
         if (priceHistory.length > 60) priceHistory.shift();
@@ -481,13 +491,29 @@
           let shortThreshold = 0.000001;
 
           if (deltaHistory.length >= 5) {
-            const positiveDeltas = deltaHistory.filter(d => d > 0);
-            const negativeDeltas = deltaHistory.filter(d => d < 0);
-            const posMean = positiveDeltas.length ? positiveDeltas.reduce((a,b) => a + b, 0) / positiveDeltas.length : 0;
-            const negMean = negativeDeltas.length ? Math.abs(negativeDeltas.reduce((a,b) => a + b, 0) / negativeDeltas.length) : 0;
-            if (positiveDeltas.length > 0) longThreshold = Math.max(0.1, posMean);
-            if (negativeDeltas.length > 0) shortThreshold = Math.max(0.1, negMean);
-          }
+  let positiveDeltas = [];
+  let negativeDeltas = [];
+
+  for (let d of deltaHistory) {
+    if (d > 0) {
+      positiveDeltas.push(d);
+      negativeDeltas.push(0);
+    } else if (d < 0) {
+      positiveDeltas.push(0);
+      negativeDeltas.push(Math.abs(d));
+    } else {
+      positiveDeltas.push(0);
+      negativeDeltas.push(0);
+    }
+  }
+
+  const posMean = positiveDeltas.reduce((a, b) => a + b, 0) / positiveDeltas.length || 0;
+  const negMean = negativeDeltas.reduce((a, b) => a + b, 0) / negativeDeltas.length || 0;
+
+  longThreshold = Math.max(0.1, posMean);
+  shortThreshold = Math.max(0.1, negMean);
+}
+
 
           let currentSignal = 'neutral';
           if (avgDelta > longThreshold) currentSignal = 'long';
@@ -526,23 +552,31 @@
             lastSignal = finalSignal;
           }
 
-          const fmt = n => Number(n).toLocaleString('ru-RU', { minimumFractionDigits: 2 });
+          
           const statsDiv = document.getElementById("statsText");
-          statsDiv.innerHTML = `
-            📈 Покупки: ${fmt(buyVolume)} &nbsp;&nbsp;&nbsp;
-            📉 Продажи: ${fmt(Math.abs(sellVolume))} &nbsp;&nbsp;&nbsp;
-            🔄 Дельта: ${fmt(avgDelta)}<br>
-            🎯 Порог Long: ${fmt(longThreshold)} &nbsp;&nbsp;&nbsp;
-            ⛔ Порог Short: ${fmt(shortThreshold)}
-          `;
+statsDiv.innerHTML = `
+  <div id="deltaStatic">
+    📈 Покупки: ${fmt(buyVolume)} &nbsp;&nbsp;&nbsp;
+    📉 Продажи: ${fmt(Math.abs(sellVolume))} &nbsp;&nbsp;&nbsp;
+    🔄 Дельта: ${fmt(avgDelta)}<br>
+    🎯 Порог Long: ${fmt(longThreshold)} &nbsp;&nbsp;&nbsp;
+    ⛔ Порог Short: ${fmt(shortThreshold)}
+  </div>
+  <div id="deltaLive">🟡 Текущая дельта: ${fmt(delta)}</div>
+`;
 
           delta = 0;
+		  buyVolume = 0;
+sellVolume = 0;
           lastReset = now;
+		  
         }
 
         if (document.getElementById("autoScroll").checked) {
-          tape.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+  tape.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+
       };
 
       wsLeft.onerror = (error) => {
